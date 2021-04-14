@@ -102,6 +102,24 @@ CudaDeviceFunction vector_t getNormal(){
 	return normal;
 }
 
+CudaDeviceFunction real_t getStrainRate(){
+	return StrainRate;
+}
+
+<?R for (D in c('Dxx','Dyy','Dxy')){ ?>
+CudaDeviceFunction real_t get<?%s D ?>(){
+	return <?%s D ?>;
+}
+<?R } ?>
+
+CudaDeviceFunction real_t getViscosity(){
+	return (Tau-0.5)/3.0;
+}
+
+CudaDeviceFunction real_t getIterations(){
+	return Iterations;
+}
+
 // 	HELPER FUNCTIONS:
 CudaDeviceFunction vector_t calcGradPhi(){
 	vector_t gradPhi;
@@ -230,19 +248,33 @@ CudaDeviceFunction vector_t calcF_phi_xy(vector_t gradPhi, real_t myPhaseF, real
 	return f_phi;
 }
 
-CudaDeviceFunction real_t calcTau(real_t myPhaseF, real_t myRho)
+CudaDeviceFunction real_t calcTau(real_t myPhaseF, real_t myRho, real_t strain)
 {
-	real_t tau;
 
-	if ( myPhaseF < PhaseField_l){
-		tau = tau_l + 0.5;
-	} else if (myPhaseF > PhaseField_h) {
-		tau = tau_h + 0.5;
-	} else {
-		real_t normPhaseF = (myPhaseF - PhaseField_l)/(PhaseField_h - PhaseField_l);
+	// lambda function for HB fluid. 'auto' b.c. compiler error for 'double to real_t' conversion
+	auto HBF_reg = [](real_t strain, real_t yeild, real_t k, real_t n, real_t m){
+		// Regularised Herschel-Bulkley fluid apparent viscosity
+
+		if (n == 0.0 && yeild == 0.0){ //Newtonian short circuit
+			return k;
+		}
+
+		if (strain < strainLimit){
+			real_t nu_0 = k * pow(m,1-n) + m * yeild;
+			real_t nu_c = yeild/strainLimit * (1 - exp(-m*strainLimit)) + k * pow(strainLimit/(1 - exp(-m*strainLimit)),n-1);
+			// linear interpolation between finite limit at 0 strain and value at strainLimit
+			return nu_0 * (1.0 - strain/strainLimit) + nu_c * strain/strainLimit;
+		} else {
+			return yeild/strain * (1 - exp(-m*strain)) + k * pow(strain/(1 - exp(-m*strain)),n-1);
+		}
+	};
+
+	//lambda funcion for interface interpolation
+	auto InterfaceUpdate = [](real_t normPhase, real_t lower, real_t upper){
 		// Linear update: eq23
-		tau = 0.5 + tau_l + normPhaseF*(tau_h - tau_l);
-
+		//tau = 0.5 + tau_l + normPhaseF*(tau_h - tau_l);
+		return lower + normPhase*(upper - lower);
+	};
 	// There are a number of ways to update the relaxation time through the interface
 	//		a number of these are supplied here for the interested user:
 	// Inverse update: eq22
@@ -265,6 +297,23 @@ CudaDeviceFunction real_t calcTau(real_t myPhaseF, real_t myRho)
 		//					/ ((myPhaseF-PhaseField_l)*Density_l*Viscosity_l  
 		//					  +(PhaseField_h-myPhaseF)*Density_h*Viscosity_h    ) ;
 		// tau = 3.0 * DynVisc / myRho + 0.5;
+	
+
+	real_t tau;
+	
+	if ( myPhaseF < PhaseField_l){
+		tau = 0.5 + 3.0 * HBF_reg(strain, Yeild_Stress_l, Consistency_index_l, n_l, Reg_m);
+	} else if (myPhaseF > PhaseField_h) {
+		tau = 0.5 + 3.0 * HBF_reg(strain, Yeild_Stress_h, Consistency_index_h, n_h, Reg_m);
+	} else {
+		real_t normPhaseF = (myPhaseF - PhaseField_l)/(PhaseField_h - PhaseField_l);
+		/*real_t yeild = InterfaceUpdate(normPhaseF, Yeild_Stress_l, Yeild_Stress_h);
+		real_t k = InterfaceUpdate(normPhaseF, Consistency_index_l, Consistency_index_h);
+		real_t n = InterfaceUpdate(normPhaseF, n_l, n_h);
+		tau = 0.5 + 3.0 * HBF_reg(strain, yeild, k, n, Reg_m);*/
+		real_t t_l = 0.5 + 3.0 * HBF_reg(strain, Yeild_Stress_l, Consistency_index_l, n_l, Reg_m);
+		real_t t_h = 0.5 + 3.0 * HBF_reg(strain, Yeild_Stress_h, Consistency_index_h, n_h, Reg_m);
+		tau = InterfaceUpdate(normPhaseF, t_l, t_h);
 	}
 
 	return tau;
@@ -382,6 +431,12 @@ CudaDeviceFunction void Init_distributions(){
 		}
 	#endif
 	PhaseF = <?R C(sum(h)) ?>;
+
+	StrainRate = 0.0; // Could calculate this properly from initial conditions but not sure if necessary
+	Tau = calcTau(myPhaseF, calcRho(myPhaseF), StrainRate);
+	
+
+
 }
 
 //	ITERATION:
@@ -977,7 +1032,7 @@ CudaDeviceFunction void relaxMRT(real_t R[9], real_t tau)
 	R[8] = ( S[2] + ( S[1] + S[0]*2. )*2. + ( -S[6] + S[4] - S[8]*3. + ( -S[5] + S[3] )*2. )*3. )/36.;
 }
 
-CudaDeviceFunction vector_t calcTotalHydrodynamicForceMRT(vector_t gradPhi, real_t myPhaseF, real_t rho, real_t tau, real_t mu, real_t p)
+CudaDeviceFunction vector_t calcTotalHydrodynamicForceMRT(vector_t gradPhi, real_t myPhaseF, real_t rho, real_t mu, real_t p)
 {
 	// arguments:
 	// gradPhi - Phase field gradients
@@ -985,7 +1040,6 @@ CudaDeviceFunction vector_t calcTotalHydrodynamicForceMRT(vector_t gradPhi, real
 
 	// Fluid Properties: 
 	// real_t rho - fluid density
-	// real_t tau - relaxation parameter
 	// real_t mu - chemical potential 
 	// real_t p - normalized pressure
 
@@ -1009,6 +1063,10 @@ CudaDeviceFunction vector_t calcTotalHydrodynamicForceMRT(vector_t gradPhi, real
 	F_surf_tension[0] = mu*gradPhi.x;
 	F_surf_tension[1] = mu*gradPhi.y;
 
+	//temp variables
+	real_t tau_prev, U_prev, V_prev;
+	Iterations = fixedIterator;
+
 	// Calculate viscous force
 	for (int j=0;j<fixedIterator;j++){
 		// Optional fixed point iterator
@@ -1020,19 +1078,36 @@ CudaDeviceFunction vector_t calcTotalHydrodynamicForceMRT(vector_t gradPhi, real
 			R[i] = g[i] - geq[i];
 		}
 		
-		relaxMRT(R, tau);
+		tau_prev = Tau;
+		U_prev = U;
+		V_prev = V;
+		
 
-		// Stress/strain Tensor
+		relaxMRT(R, Tau);
+
+		// Stress Tensor
 		stress[0] = 0.0;stress[1] = 0.0;stress[2] = 0.0;
 		for (int i=0; i< 9; i++){
 			stress[0] += R[i]*d2q9_ex[i]*d2q9_ex[i];
 			stress[1] += R[i]*d2q9_ex[i]*d2q9_ey[i];
 			stress[2] += R[i]*d2q9_ey[i]*d2q9_ey[i];    
 		}
-		
+
+		// Strain Tensor = 1/2 (Delta.U + (Delta.U)^T)
+		Dxx = -3.0/2.0 * stress[0];
+		Dxy = -3.0/2.0 * stress[1];
+		Dyy = -3.0/2.0 * stress[2];
+
+		// Traceless part for deformation.
+		Dxx = Dxx - (Dxx+Dyy)/2.;
+        Dyy = Dyy - (Dxx+Dyy)/2.;
+
+		StrainRate = sqrt(2.0*(Dxx*Dxx + 2.0*Dxy*Dxy + Dyy*Dyy));
+		Tau = calcTau(myPhaseF, rho, StrainRate);
+	
 		// Viscous force
-		F_mu[0] = (0.5-tau) * (stress[0]*gradPhi.x + stress[1]*gradPhi.y) * density_coeff;
-		F_mu[1] = (0.5-tau) * (stress[1]*gradPhi.x + stress[2]*gradPhi.y) * density_coeff;
+		F_mu[0] = (0.5-Tau) * (stress[0]*gradPhi.x + stress[1]*gradPhi.y) * density_coeff;
+		F_mu[1] = (0.5-Tau) * (stress[1]*gradPhi.x + stress[2]*gradPhi.y) * density_coeff;
 
 		// Total Hydrodynamic Force
 		F_total_hydro.x = F_surf_tension[0] + F_pressure[0] + F_body[0] + F_mu[0];
@@ -1042,6 +1117,11 @@ CudaDeviceFunction vector_t calcTotalHydrodynamicForceMRT(vector_t gradPhi, real
 		// update velocity and re-iterate
 		U = g[1]-g[3]+g[5]-g[6]-g[7]+g[8] + 0.5*F_total_hydro.x/rho;
 		V = g[2]-g[4]+g[5]+g[6]-g[7]-g[8] + 0.5*F_total_hydro.y/rho;
+
+		if (abs((Tau - tau_prev)/tau_prev) < 1e-12
+			&& abs((U - U_prev)/U_prev) < 1e-12
+			&& abs((V - V_prev)/V_prev) < 1e-12
+			){ Iterations = j; break; }
 	}
 	#ifdef OPTIONS_debug
 		AddToF_pressureX(F_pressure[0]);
@@ -1073,7 +1153,7 @@ CudaDeviceFunction void CollisionMRT(){
 
 	// Find Macroscopic Details
 	real_t rho = calcRho(myPhaseF);
-	real_t tau = calcTau(myPhaseF, rho);
+	//real_t tau = calcTau(myPhaseF, rho);
 	real_t pfavg = 0.5*(PhaseField_l+PhaseField_h);
 
 	//  Gradients & Normals
@@ -1082,7 +1162,7 @@ CudaDeviceFunction void CollisionMRT(){
 	real_t ny = gradPhi.y/gradPhi.z;
 
 	real_t p = getNormalizedPressure(); // normlized pressure
-	vector_t Fhydro = calcTotalHydrodynamicForceMRT(gradPhi, myPhaseF, rho, tau,  calcMu(myPhaseF), p);
+	vector_t Fhydro = calcTotalHydrodynamicForceMRT(gradPhi, myPhaseF, rho, calcMu(myPhaseF), p);
 
 	// PHASE FIELD POPULATION UPDATE:
 	#ifdef OPTIONS_RT
@@ -1135,7 +1215,7 @@ CudaDeviceFunction void CollisionMRT(){
 		R[i] = g[i] - (geq[i] - 0.5*F_i[i]);
 	}
 
-	relaxMRT(R, tau);
+	relaxMRT(R, Tau);
 
 	// Collision 
 	for (int i=0; i< 9; i++) {
@@ -1210,7 +1290,7 @@ CudaDeviceFunction void WVelocity()
 	PhaseF = PhaseField_init; 
 	vector_t gradPhi = calcGradPhi(); // Phase field gradient
 	real_t rho = calcRho(PhaseF);
-	real_t tau = calcTau(PhaseF, rho);
+	//real_t tau = calcTau(PhaseF, rho);
 	real_t p = getNormalizedPressure() ; // normalized pressure
 	vector_t Fhydro;
 	#ifdef OPTIONS_BGK
@@ -1219,7 +1299,7 @@ CudaDeviceFunction void WVelocity()
 	#elif OPTIONS_CM
 		if (NodeType & NODE_CM) { Fhydro = calcTotalHydrodynamicForceCM(gradPhi, PhaseF, rho, tau,  calcMu(PhaseF), p);}
 	#else
-		if (NodeType & NODE_MRT) { Fhydro = calcTotalHydrodynamicForceMRT(gradPhi, PhaseF, rho, tau,  calcMu(PhaseF), p);}
+		if (NodeType & NODE_MRT) { Fhydro = calcTotalHydrodynamicForceMRT(gradPhi, PhaseF, rho, calcMu(PhaseF), p);}
 	#endif
 
 	// enforce Poiseuille velocity profile
@@ -1290,7 +1370,7 @@ CudaDeviceFunction void NVelocity()
 
 	vector_t gradPhi = calcGradPhi(); // Phase field gradient
 	real_t rho = calcRho(PhaseF);
-	real_t tau = calcTau(PhaseF, rho);
+	//real_t tau = calcTau(PhaseF, rho);
 	real_t p = getNormalizedPressure() ; // normalized pressure
 	vector_t Fhydro;
 	#ifdef OPTIONS_BGK
@@ -1299,7 +1379,7 @@ CudaDeviceFunction void NVelocity()
 	#elif OPTIONS_CM
 		if (NodeType & NODE_CM) { Fhydro = calcTotalHydrodynamicForceCM(gradPhi, PhaseF, rho, tau,  calcMu(PhaseF), p);}
 	#else
-		if (NodeType & NODE_MRT) { Fhydro = calcTotalHydrodynamicForceMRT(gradPhi, PhaseF, rho, tau,  calcMu(PhaseF), p);}
+		if (NodeType & NODE_MRT) { Fhydro = calcTotalHydrodynamicForceMRT(gradPhi, PhaseF, rho, calcMu(PhaseF), p);}
 	#endif
 
 	// Appendix C16-C23 from
@@ -1401,7 +1481,7 @@ CudaDeviceFunction void BounceBack()
 
 		vector_t gradPhi = calcGradPhi(); // Phase field gradient
 		real_t rho = calcRho(PhaseF);
-		real_t tau = calcTau(PhaseF, rho);
+		//real_t tau = calcTau(PhaseF, rho);
 		real_t p = getNormalizedPressure() ; // normalized pressure
 		vector_t Fhydro;
 		#ifdef OPTIONS_BGK
@@ -1410,7 +1490,7 @@ CudaDeviceFunction void BounceBack()
 		#elif OPTIONS_CM
 			if (NodeType & NODE_CM) { Fhydro = calcTotalHydrodynamicForceCM(gradPhi, PhaseF, rho, tau,  calcMu(PhaseF), p);}
 		#else
-			if (NodeType & NODE_MRT) { Fhydro = calcTotalHydrodynamicForceMRT(gradPhi, PhaseF, rho, tau,  calcMu(PhaseF), p);}
+			if (NodeType & NODE_MRT) { Fhydro = calcTotalHydrodynamicForceMRT(gradPhi, PhaseF, rho, calcMu(PhaseF), p);}
 		#endif
 		p1.x = p1.x*rho + 0.5*Fhydro.x;
 		p1.y = p1.y*rho + 0.5*Fhydro.y;
@@ -1450,7 +1530,7 @@ CudaDeviceFunction void BounceBack()
 
 		vector_t gradPhi = calcGradPhi(); // Phase field gradient
 		real_t rho = calcRho(PhaseF);
-		real_t tau = calcTau(PhaseF, rho);
+		//real_t tau = calcTau(PhaseF, rho);
 		real_t p = getNormalizedPressure() ; // normalized pressure
 		vector_t Fhydro;
 		#ifdef OPTIONS_BGK
@@ -1459,7 +1539,7 @@ CudaDeviceFunction void BounceBack()
 		#elif OPTIONS_CM
 			if (NodeType & NODE_CM) { Fhydro = calcTotalHydrodynamicForceCM(gradPhi, PhaseF, rho, tau,  calcMu(PhaseF), p);}
 		#else
-			if (NodeType & NODE_MRT) { Fhydro = calcTotalHydrodynamicForceMRT(gradPhi, PhaseF, rho, tau,  calcMu(PhaseF), p);}
+			if (NodeType & NODE_MRT) { Fhydro = calcTotalHydrodynamicForceMRT(gradPhi, PhaseF, rho, calcMu(PhaseF), p);}
 		#endif
 
 		p2.x = p2.x*rho + 0.5*Fhydro.x;

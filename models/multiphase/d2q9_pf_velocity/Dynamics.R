@@ -36,6 +36,15 @@ AddDensity(name="V", dx=0, dy=0, group="Vel")
 #	Phase-field stencil for finite differences
 AddField('PhaseF',stencil2d=1, group="PF")
 
+#	Non-Newtonian properties
+AddDensity(name="StrainRate", dx=0, dy=0, group="NN")
+for (D in c('Dxx','Dyy','Dxy')){
+	AddDensity(name=D, dx=0, dy=0, group="NN")
+}
+AddDensity(name="Tau", dx=0, dy=0, group="NN")
+
+AddDensity(name="Iterations", dx=0, dy=0, group="NN")
+
 #	Additional access required for outflow boundaries
 if (Options$Outflow){
 	for (d in rows(DensityAll)){
@@ -75,11 +84,11 @@ if (Options$RT) {
 	# initialisation
 	AddStage("PhaseInit" , "Init_phase"			, save=Fields$group %in% c("PF"))
 	AddStage("WallInit"  , "Init_wallNorm"		, save=Fields$group %in% c("nw"))
-	AddStage("BaseInit"  , "Init_distributions" , save=Fields$group %in% c("g","h","Vel"))
+	AddStage("BaseInit"  , "Init_distributions" , save=Fields$group %in% c("g","h","Vel","NN"))
 
 	# iteration
-	AddStage("BaseIter"  , "calcHydroIter"      , save=Fields$group %in% c("g","h","Vel","nw") , load=DensityAll$group %in% c("g","h","Vel","nw"))  # TODO: is nw needed here?
-	AddStage("PhaseIter" , "calcPhaseFIter"		, save=Fields$group %in% c("PF")			   , load=DensityAll$group %in% c("g","h","Vel","nw"))
+	AddStage("BaseIter"  , "calcHydroIter"      , save=Fields$group %in% c("g","h","Vel","nw","NN") , load=DensityAll$group %in% c("g","h","Vel","nw","NN"))  # TODO: is nw needed here?
+	AddStage("PhaseIter" , "calcPhaseFIter"		, save=Fields$group %in% c("PF")			   , load=DensityAll$group %in% c("g","h","Vel","nw","NN"))
 	AddStage("WallIter"  , "calcWallPhaseIter"	, save=Fields$group %in% c("PF")			   , load=DensityAll$group %in% c("nw"))	
 }
 
@@ -93,6 +102,12 @@ AddQuantity(name="U",	  unit="m/s",vector=T)
 AddQuantity(name="NormalizedPressure",	  unit="Pa")
 AddQuantity(name="Pressure",	  unit="Pa")
 AddQuantity(name="Normal", unit="1", vector=T)
+AddQuantity(name="StrainRate", unit="1")
+for (D in c('Dxx','Dyy','Dxy')){
+	AddQuantity(name=D, unit="1")
+}
+AddQuantity(name="Viscosity",unit="m2/s")
+AddQuantity(name="Iterations",unit="1")
 
 #	Initialisation States
 AddSetting(name="Period", default="0", comment='Number of cells per cos wave')
@@ -119,10 +134,19 @@ AddSetting(name="ContactAngle", radAngle='ContactAngle*3.1415926535897/180', def
 AddSetting(name="radAngle", comment='Conversion to rads for calcs')
 
 # 	Inputs: Fluid Properties
-AddSetting(name="tau_l", comment='relaxation time (low density fluid)')
-AddSetting(name="tau_h", comment='relaxation time (high density fluid)')
-AddSetting(name="Viscosity_l", tau_l='(3*Viscosity_l)', default=0.16666666, comment='kinematic viscosity')
-AddSetting(name="Viscosity_h", tau_h='(3*Viscosity_h)', default=0.16666666, comment='kinematic viscosity')
+#AddSetting(name="tau_l", comment='relaxation time (low density fluid)')
+#AddSetting(name="tau_h", comment='relaxation time (high density fluid)')
+AddSetting(name="Viscosity_l", Consistency_index_l='Viscosity_l', comment='kinematic viscosity')
+AddSetting(name="Viscosity_h", Consistency_index_h='Viscosity_h', comment='kinematic viscosity')
+AddSetting(name="Consistency_index_l", default=0.16666666, comment='kinematic viscosity')
+AddSetting(name="Consistency_index_h", default=0.16666666, comment='kinematic viscosity')
+AddSetting(name="n_l", default=1, comment='power law index')
+AddSetting(name="n_h", default=1, comment='power law index')
+AddSetting(name='Yeild_Stress_l', default=0.0, comment='Yeild Stress')
+AddSetting(name='Yeild_Stress_h', default=0.0, comment='Yeild Stress')
+
+AddSetting(name='Reg_m', default=1e10, comment='Regularisaation Parameter')
+AddSetting(name='strainLimit', default=1e-12, comment='highest strain rate at which interpolation is used')
 
 AddSetting(name="omega_bulk", comment='inverse of bulk relaxation time', default=1.0)
 AddSetting(name="bulk_visc", omega_bulk='1.0/(3*bulk_visc+0.5)',  comment='bulk viscosity')
