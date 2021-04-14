@@ -48,6 +48,15 @@ if (Options$altContactAngle){
 } else {
     AddField("PhaseF",stencil3d=1, group="PF")
 }
+
+AddDensity(name="StrainRate", dx=0, dy=0, dz=0, group="NN")
+# for (D in c('Dxx','Dxy','Dxz','Dyy','Dyz','Dzz')){
+# 	AddDensity(name=D, dx=0, dy=0, dz=0, group="NN")
+# }
+AddDensity(name="Tau", dx=0, dy=0, dz=0, group="NN")
+AddDensity(name="Iterations", dx=0, dy=0, dz=0, group="NN")
+
+
 if (Options$OutFlow){
 	for (d in rows(DensityAll)) {
 		AddField( name=d$name, dx=-d$dx-1, dy=-d$dy, dz=-d$dz )
@@ -113,6 +122,12 @@ if (Options$altContactAngle){
     AddQuantity(name="PerpVal", unit="1")
     AddQuantity(name="IsItBoundary", unit="1")
 }
+	AddQuantity(name="StrainRate", unit="1")
+	# for (D in c('Dxx','Dxy','Dxz','Dyy','Dyz','Dzz')){
+	# 	AddQuantity(name=D, unit="1")
+	# }
+	AddQuantity(name="Viscosity",unit="m2/s")
+	AddQuantity(name="Iterations",unit="1")
 ###################################
 ########INPUTS - PHASEFIELD########
 ###################################
@@ -122,6 +137,7 @@ if (Options$altContactAngle){
 	AddSetting(name="PhaseField_l", default=0, comment='PhaseField gas')
 	AddSetting(name="PhaseField", 	   comment='Initial PhaseField distribution', zonal=T)
 	AddSetting(name="IntWidth", default=4,    comment='Anti-diffusivity coeff')
+	AddSetting(name="Interp_n", default=1, comment='polynomial degree of phase-field interpolation. Sharp interface when == 0')
 	AddSetting(name="omega_phi", comment='one over relaxation time (phase field)')
 	AddSetting(name="M", omega_phi='1.0/(3*M+0.5)', default=0.02, comment='Mobility')
 	AddSetting(name="sigma", comment='surface tension')
@@ -156,11 +172,17 @@ if (Options$altContactAngle){
 ##############################
 ########INPUTS - FLUID########
 ##############################
-	AddSetting(name="tau_l", comment='relaxation time (low density fluid)')
-	AddSetting(name="tau_h", comment='relaxation time (high density fluid)')
-    AddSetting(name="tauUpdate", default="1", comment="Interpolation: 1-linear, 2- inverse, 3- dyn viscosity")
-	AddSetting(name="Viscosity_l", tau_l='(3*Viscosity_l)', default=0.16666666, comment='kinematic viscosity')
-	AddSetting(name="Viscosity_h", tau_h='(3*Viscosity_h)', default=0.16666666, comment='kinematic viscosity')
+	# AddSetting(name="tau_l", comment='relaxation time (low density fluid)')
+	# AddSetting(name="tau_h", comment='relaxation time (high density fluid)')
+	AddSetting(name="Viscosity_l", Consistency_index_l='Viscosity_l', comment='kinematic viscosity')
+	AddSetting(name="Viscosity_h", Consistency_index_h='Viscosity_h', comment='kinematic viscosity')
+	AddSetting(name="Consistency_index_l", default=0.16666666, comment='kinematic power-law coefficient')
+	AddSetting(name="Consistency_index_h", default=0.16666666, comment='kinematic power-law coefficient')
+	AddSetting(name="n_l", default=1.0, comment='power law index')
+	AddSetting(name="n_h", default=1.0, comment='power law index')
+	AddSetting(name='Yield_stress_l', default=0.0, comment='Yield Stress')
+	AddSetting(name='Yield_stress_h', default=0.0, comment='Yield Stress')
+	#	Inputs: Flow Properties
 	AddSetting(name="VelocityX", default=0.0, comment='inlet/outlet/init velocity', zonal=T)
 	AddSetting(name="VelocityY", default=0.0, comment='inlet/outlet/init velocity', zonal=T)
 	AddSetting(name="VelocityZ", default=0.0, comment='inlet/outlet/init velocity', zonal=T)
@@ -171,6 +193,10 @@ if (Options$altContactAngle){
 	AddSetting(name="BuoyancyX", default=0.0, comment='applied (rho_h-rho)*BuoyancyX')
 	AddSetting(name="BuoyancyY", default=0.0, comment='applied (rho_h-rho)*BuoyancyY')
 	AddSetting(name="BuoyancyZ", default=0.0, comment='applied (rho_h-rho)*BuoyancyZ')
+	AddSetting(name="fixedIterator", default=3.0, comment='fixed iterator for velocity/viscosity calculation')
+
+	AddSetting(name='Reg_m', default=1e10, comment='Regularisaation Parameter')
+	AddSetting(name='strainLimit', default=1e-12, comment='highest strain rate at which interpolation is used')
 ##################################
 ########TRACKING VARIABLES########
 ##################################
@@ -187,6 +213,8 @@ if (Options$altContactAngle){
 	AddGlobal("RTISaddle",op="MAX", comment='SaddleTracker')
 	AddGlobal("XLocation", comment='tracking of x-centroid of the gas regions in domain', unit="m")
 	AddGlobal(name="DropFront",	op="MAX",  comment='Highest location of droplet', unit="m")
+	AddNodeType(name="LogP", group="ADDITIONALS")
+	AddGlobal(name="VelMag", comment='Velocity magnitude for steady state determination', unit="m/s")
 ##########################
 ########NODE TYPES########
 ##########################
