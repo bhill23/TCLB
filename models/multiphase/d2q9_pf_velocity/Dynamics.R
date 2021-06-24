@@ -38,9 +38,9 @@ AddField('PhaseF',stencil2d=1, group="PF")
 
 #	Non-Newtonian properties
 AddDensity(name="StrainRate", dx=0, dy=0, group="NN")
-for (D in c('Dxx','Dyy','Dxy')){
-	AddDensity(name=D, dx=0, dy=0, group="NN")
-}
+# for (D in c('Dxx','Dyy','Dxy')){
+# 	AddDensity(name=D, dx=0, dy=0, group="NN")
+# }
 AddDensity(name="Tau", dx=0, dy=0, group="NN")
 
 AddDensity(name="Iterations", dx=0, dy=0, group="NN")
@@ -62,10 +62,10 @@ if (Options$RT) {
 	# initialisation
 	AddStage("PhaseInit" , "Init_phase" 		, save=Fields$group %in% c("PF"))
 	AddStage("WallInit"  , "Init_wallNorm"    	, save=Fields$group %in% c("nw"))
-	AddStage("BaseInit"  , "Init_distributions" , save=Fields$group %in% c("g","h","Vel"))
+	AddStage("BaseInit"  , "Init_distributions" , save=Fields$group %in% c("g","h","Vel","NN"))
 	
 	# iteration
-	AddStage("BaseIter"  , "calcHydroIter" 		, save=Fields$group %in% c("g","h","Vel")		, load=DensityAll$group %in% c("g","h","Vel"))
+	AddStage("BaseIter"  , "calcHydroIter" 		, save=Fields$group %in% c("g","h","Vel","NN")		, load=DensityAll$group %in% c("g","h","Vel","NN"))
     AddStage("PhaseIter" , "calcPhaseFIter"		, save=Fields$name  %in% c("PhaseF","PhaseOld") , load=DensityAll$group=="h")
   	AddStage("WallIter"  , "calcWallPhaseIter"  , save=Fields$group %in% c("PF")				, load=DensityAll$group=="nw") 
 } else if (Options$Outflow) {
@@ -73,11 +73,11 @@ if (Options$RT) {
 	# initialisation
 	AddStage("PhaseInit" , "Init_phase"			, save=Fields$group %in% c("PF"))
 	AddStage("WallInit"  , "Init_wallNorm"		, save=Fields$group %in% c("nw"))
-	AddStage("BaseInit"  , "Init_distributions"	, save=Fields$group %in% c("g","h","Vel","gold","hold")) 
+	AddStage("BaseInit"  , "Init_distributions"	, save=Fields$group %in% c("g","h","Vel","gold","hold","NN")) 
 	# iteration
-	AddStage("BaseIter"  , "calcHydroIter"      , save=Fields$group %in% c("g","h","Vel","nw","gold","hold"), 
-												  load=DensityAll$group %in% c("g","h","Vel","nw","gold","hold")) 
-	AddStage("PhaseIter" , "calcPhaseFIter"		, save=Fields$group %in% c("PF"), load=DensityAll$group %in% c("g","h","Vel","nw","gold","hold"))
+	AddStage("BaseIter"  , "calcHydroIter"      , save=Fields$group %in% c("g","h","Vel","nw","gold","hold","NN"), 
+												  load=DensityAll$group %in% c("g","h","Vel","nw","gold","hold","NN")) 
+	AddStage("PhaseIter" , "calcPhaseFIter"		, save=Fields$group %in% c("PF"), load=DensityAll$group %in% c("g","h","Vel","nw","gold","hold","NN"))
 	AddStage("WallIter"  , "calcWallPhaseIter"	, save=Fields$group %in% c("PF"), load=DensityAll$group=="nw")	
 } else {
 	
@@ -103,9 +103,9 @@ AddQuantity(name="NormalizedPressure",	  unit="Pa")
 AddQuantity(name="Pressure",	  unit="Pa")
 AddQuantity(name="Normal", unit="1", vector=T)
 AddQuantity(name="StrainRate", unit="1")
-for (D in c('Dxx','Dyy','Dxy')){
-	AddQuantity(name=D, unit="1")
-}
+# for (D in c('Dxx','Dyy','Dxy')){
+# 	AddQuantity(name=D, unit="1")
+# }
 AddQuantity(name="Viscosity",unit="m2/s")
 AddQuantity(name="Iterations",unit="1")
 
@@ -124,8 +124,8 @@ AddSetting(name="Density_h", comment='High density fluid')
 AddSetting(name="Density_l", comment='Low  density fluid')
 AddSetting(name="PhaseField_h", default=1, comment='PhaseField in high density fluid')
 AddSetting(name="PhaseField_l", default=0, comment='PhaseField in low density fluid')
-AddSetting(name="PhaseField_init", 	   comment='Initial/Inflow PhaseField distribution', zonal=T)
-AddSetting(name="W", default=4,    comment='Anti-diffusivity coeff (phase interfacial thickness) ')
+AddSetting(name="PhaseField", 	   comment='Initial/Inflow PhaseField distribution', zonal=T)
+AddSetting(name="IntWidth", default=4,    comment='Anti-diffusivity coeff (phase interfacial thickness) ')
 AddSetting(name="omega_phi", comment='one over relaxation time (phase field)')
 AddSetting(name="M", omega_phi='1.0/(3*M+0.5)', default=0.02, comment='Mobility')
 AddSetting(name="sigma", 		   comment='surface tension')
@@ -142,8 +142,8 @@ AddSetting(name="Consistency_index_l", default=0.16666666, comment='kinematic vi
 AddSetting(name="Consistency_index_h", default=0.16666666, comment='kinematic viscosity')
 AddSetting(name="n_l", default=1, comment='power law index')
 AddSetting(name="n_h", default=1, comment='power law index')
-AddSetting(name='Yeild_Stress_l', default=0.0, comment='Yeild Stress')
-AddSetting(name='Yeild_Stress_h', default=0.0, comment='Yeild Stress')
+AddSetting(name='Yield_stress_l', default=0.0, comment='Yield Stress')
+AddSetting(name='Yield_stress_h', default=0.0, comment='Yield Stress')
 
 AddSetting(name='Reg_m', default=1e10, comment='Regularisaation Parameter')
 AddSetting(name='strainLimit', default=1e-12, comment='highest strain rate at which interpolation is used')
@@ -159,12 +159,12 @@ AddSetting(name="GravitationX", default=0.0, comment='applied (rho)*GravitationX
 AddSetting(name="GravitationY", default=0.0, comment='applied (rho)*GravitationY', zonal=T)
 AddSetting(name="BuoyancyX", default=0.0, comment='applied (rho-rho_h)*BuoyancyX')
 AddSetting(name="BuoyancyY", default=0.0, comment='applied (rho-rho_h)*BuoyancyY')
-AddSetting(name="fixedIterator", default=2.0, comment='fixed iterator for velocity calculation')
+AddSetting(name="fixedIterator", default=3.0, comment='fixed iterator for velocity calculation')
 #	Globals - table of global integrals that can be monitored and optimized
-AddGlobal(name="PressureLoss", comment='pressure loss', unit="1mPa")
-AddGlobal(name="OutletFlux", comment='pressure loss', unit="1m2/s")
-AddGlobal(name="InletFlux", comment='pressure loss', unit="1m2/s")
-AddGlobal(name="TotalDensity", comment='Mass conservation check', unit="1kg/m3")
+# AddGlobal(name="PressureLoss", comment='pressure loss', unit="1mPa")
+# AddGlobal(name="OutletFlux", comment='pressure loss', unit="1m2/s")
+# AddGlobal(name="InletFlux", comment='pressure loss', unit="1m2/s")
+# AddGlobal(name="TotalDensity", comment='Mass conservation check', unit="1kg/m3")
 AddNodeType(name="SpikeTrack", group="ADDITIONALS")
 AddNodeType(name="BubbleTrack", group="ADDITIONALS")
 AddGlobal(name="RTIBubble", comment='Bubble Tracker', op="MAX")
@@ -209,6 +209,9 @@ AddNodeType(name="Body", group="BODY")  # To measure force exerted on the body.
 AddGlobal(name="FDrag", comment='Force exerted on body in X-direction', unit="N")
 AddGlobal(name="FLift", comment='Force exerted on body in Y-direction', unit="N")
 AddGlobal(name="FTotal", comment='Force exerted on body in X+Y -direction', unit="N")
+
+AddNodeType(name="LogP", group="ADDITIONALS")
+AddGlobal(name="VelMag", comment='Velocity magnitude for steady state determination', unit="m/s")
 
 if (Options$Outflow) {
 	AddNodeType(name="Convective_E", group="BOUNDARY")
