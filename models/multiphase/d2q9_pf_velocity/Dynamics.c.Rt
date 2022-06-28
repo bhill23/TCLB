@@ -110,7 +110,7 @@ CudaDeviceFunction real_t getStrainRate(){
 // CudaDeviceFunction real_t get<?%s D ?>(){
 // 	return <?%s D ?>;
 // }
-<?R } ?>
+<?R }; ?>
 
 CudaDeviceFunction real_t getViscosity(){
 	real_t v = (Tau-0.5)/3.0;
@@ -925,10 +925,10 @@ CudaDeviceFunction void calcWallPhaseIter(){
 				){ Iterations = j; break; }
 		}
 		//Indicate which variable was reponsible for not breaking out of loop
-		if (abs((Tau - tau_prev)/tau_prev) > 1e-9 {
+		if ( abs((Tau - tau_prev)/tau_prev) > 1e-9 ) {
 			Iterations += 1;
 		}
-		if abs((U - U_prev)/U_prev) > 1e-9 || abs((V - V_prev)/V_prev) > 1e-9 {
+		if ( abs((U - U_prev)/U_prev) > 1e-9 || abs((V - V_prev)/V_prev) > 1e-9 ) {
 			Iterations += 2;
 		}
 
@@ -1062,10 +1062,10 @@ CudaDeviceFunction void calcWallPhaseIter(){
 				){ Iterations = j; break; }
 		}
 		//Indicate which variable was reponsible for not breaking out of loop
-		if (abs((Tau - tau_prev)/tau_prev) > 1e-9 {
+		if ( abs((Tau - tau_prev)/tau_prev) > 1e-9 ) {
 			Iterations += 1;
 		}
-		if abs((U - U_prev)/U_prev) > 1e-9 || abs((V - V_prev)/V_prev) > 1e-9 {
+		if ( abs((U - U_prev)/U_prev) > 1e-9 || abs((V - V_prev)/V_prev) > 1e-9 ) {
 			Iterations += 2;
 		}
 		// PHASE FIELD POPULATION UPDATE:
@@ -1213,10 +1213,10 @@ CudaDeviceFunction vector_t calcTotalHydrodynamicForceMRT(vector_t gradPhi, real
 			){ Iterations = j; break; }
 	}
 	//Indicate which variable was reponsible for not breaking out of loop
-	if (abs((Tau - tau_prev)/tau_prev) > 1e-9 {
+	if ( abs((Tau - tau_prev)/tau_prev) > 1e-9 ) {
 		Iterations += 1;
 	}
-	if abs((U - U_prev)/U_prev) > 1e-9 || abs((V - V_prev)/V_prev) > 1e-9 {
+	if ( abs((U - U_prev)/U_prev) > 1e-9 || abs((V - V_prev)/V_prev) > 1e-9 ) {
 		Iterations += 2;
 	}
 	#ifdef OPTIONS_debug

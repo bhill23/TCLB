@@ -49,12 +49,34 @@ if (Options$altContactAngle){
     AddField("PhaseF",stencil3d=1, group="PF")
 }
 
-AddDensity(name="StrainRate", dx=0, dy=0, dz=0, group="NN")
-# for (D in c('Dxx','Dxy','Dxz','Dyy','Dyz','Dzz')){
-# 	AddDensity(name=D, dx=0, dy=0, dz=0, group="NN")
-# }
-AddDensity(name="Tau", dx=0, dy=0, dz=0, group="NN")
-AddDensity(name="Iterations", dx=0, dy=0, dz=0, group="NN")
+
+AddDensity(name="Iterations", dx=0, dy=0, dz=0, group="Vel")
+if (Options$HBF){
+	AddDensity(name="StrainRate", dx=0, dy=0, dz=0, group="HBF")
+	# for (D in c('Dxx','Dxy','Dxz','Dyy','Dyz','Dzz')){
+	# 	AddDensity(name=D, dx=0, dy=0, dz=0, group="HBF")
+	# }
+
+	# Don't need to explicitly keep Tau, StrainRate is sufficent with a bit extra work
+	# AddDensity(name="Tau", dx=0, dy=0, dz=0, group="HBF")
+
+	# AddDensity(name="nu0_l", dx=0, dy=0, dz=0, group="HBF")
+	# AddDensity(name="nu0_h", dx=0, dy=0, dz=0, group="HBF")
+	# AddDensity(name="nuc_l", dx=0, dy=0, dz=0, group="HBF")
+	# AddDensity(name="nuc_h", dx=0, dy=0, dz=0, group="HBF")
+
+	# AddSetting(name="nu0_l", comment='Do Not Set')#, nu0_l='Consistency_index_l*Density_l * pow(Reg_m,1.0-n_l) + Reg_m * Yield_stress_l'
+	# AddSetting(name="nu0_h", comment='Do Not Set')#, nu0_h='Consistency_index_h*Density_h * pow(Reg_m,1.0-n_h) + Reg_m * Yield_stress_h'
+	# AddSetting(name="nuc_l", comment='Do Not Set')#, nuc_l='Yield_stress_l/strainLimit * (1.0 - exp(-Reg_m*strainLimit)) + Consistency_index_l*Density_l * pow(strainLimit/(1.0 - exp(-Reg_m*strainLimit)),n_l-1.0)'
+	# AddSetting(name="nuc_h", comment='Do Not Set')#, nuc_h='Yield_stress_h/strainLimit * (1.0 - exp(-Reg_m*strainLimit)) + Consistency_index_h*Density_h * pow(strainLimit/(1.0 - exp(-Reg_m*strainLimit)),n_h-1.0)'
+
+	save_initial   = c(save_initial,  "HBF")
+    save_iteration = c(save_iteration,"HBF")
+    load_iteration = c(load_iteration,"HBF")
+    load_phase     = c(load_phase,    "HBF")
+
+}
+
 
 
 if (Options$OutFlow){
@@ -122,12 +144,15 @@ if (Options$altContactAngle){
     AddQuantity(name="PerpVal", unit="1")
     AddQuantity(name="IsItBoundary", unit="1")
 }
-	AddQuantity(name="StrainRate", unit="1")
+	AddQuantity(name="Iterations",unit="1")
+if (Options$HBF){
+	AddQuantity(name="StrainRate", unit="1/s")
 	# for (D in c('Dxx','Dxy','Dxz','Dyy','Dyz','Dzz')){
 	# 	AddQuantity(name=D, unit="1")
 	# }
 	AddQuantity(name="Viscosity",unit="m2/s")
-	AddQuantity(name="Iterations",unit="1")
+}
+
 ###################################
 ########INPUTS - PHASEFIELD########
 ###################################
@@ -172,8 +197,8 @@ if (Options$altContactAngle){
 ##############################
 ########INPUTS - FLUID########
 ##############################
-	# AddSetting(name="tau_l", comment='relaxation time (low density fluid)')
-	# AddSetting(name="tau_h", comment='relaxation time (high density fluid)')
+
+if (Options$HBF){
 	AddSetting(name="Viscosity_l", Consistency_index_l='Viscosity_l', comment='kinematic viscosity')
 	AddSetting(name="Viscosity_h", Consistency_index_h='Viscosity_h', comment='kinematic viscosity')
 	AddSetting(name="Consistency_index_l", default=0.16666666, comment='kinematic power-law coefficient')
@@ -182,6 +207,17 @@ if (Options$altContactAngle){
 	AddSetting(name="n_h", default=1.0, comment='power law index')
 	AddSetting(name='Yield_stress_l', default=0.0, comment='Yield Stress')
 	AddSetting(name='Yield_stress_h', default=0.0, comment='Yield Stress')
+	
+	AddSetting(name='Reg_m', default=1e10, comment='Regularisation Parameter')
+	AddSetting(name='strainLimit', default=1e-12, comment='highest strain rate at which interpolation is used')
+} else {
+	# AddSetting(name="tau_l", comment='relaxation time (low density fluid)')
+	# AddSetting(name="tau_h", comment='relaxation time (high density fluid)')
+	AddSetting(name="Viscosity_l", comment='kinematic viscosity')
+	AddSetting(name="Viscosity_h", comment='kinematic viscosity')
+}
+	
+	
 	#	Inputs: Flow Properties
 	AddSetting(name="VelocityX", default=0.0, comment='inlet/outlet/init velocity', zonal=T)
 	AddSetting(name="VelocityY", default=0.0, comment='inlet/outlet/init velocity', zonal=T)
@@ -193,10 +229,8 @@ if (Options$altContactAngle){
 	AddSetting(name="BuoyancyX", default=0.0, comment='applied (rho_h-rho)*BuoyancyX')
 	AddSetting(name="BuoyancyY", default=0.0, comment='applied (rho_h-rho)*BuoyancyY')
 	AddSetting(name="BuoyancyZ", default=0.0, comment='applied (rho_h-rho)*BuoyancyZ')
-	AddSetting(name="fixedIterator", default=3.0, comment='fixed iterator for velocity/viscosity calculation')
+	AddSetting(name="fixedIterator", default=10.0, comment='fixed iterator for velocity/viscosity calculation')
 
-	AddSetting(name='Reg_m', default=1e10, comment='Regularisaation Parameter')
-	AddSetting(name='strainLimit', default=1e-12, comment='highest strain rate at which interpolation is used')
 ##################################
 ########TRACKING VARIABLES########
 ##################################
@@ -205,14 +239,15 @@ if (Options$altContactAngle){
 	AddNodeType(name="Spiketrack", group="ADDITIONALS")
 	AddNodeType(name="Saddletrack", group="ADDITIONALS")
 	AddNodeType(name="Bubbletrack", group="ADDITIONALS")
-	AddGlobal("InterfacePosition", op="MAX", comment='trackPosition')
+	AddGlobal("InterfacePosition0", op="MAX", comment='trackPosition')
+	AddGlobal("InterfacePosition1", op="MAX", comment='trackPosition')
 	AddGlobal("Vfront",comment='velocity infront of bubble')
 	AddGlobal("Vback",comment='velocity behind bubble')
 	AddGlobal("RTISpike", op="MAX", comment='SpikeTracker ')
 	AddGlobal("RTIBubble",op="MAX", comment='BubbleTracker')
 	AddGlobal("RTISaddle",op="MAX", comment='SaddleTracker')
 	AddGlobal("XLocation", comment='tracking of x-centroid of the gas regions in domain', unit="m")
-	AddGlobal(name="DropFront",	op="MAX",  comment='Highest location of droplet', unit="m")
+	# AddGlobal(name="DropFront",	op="MAX",  comment='Highest location of droplet', unit="m")
 	AddNodeType(name="LogP", group="ADDITIONALS")
 	AddGlobal(name="VelMag", comment='Velocity magnitude for steady state determination', unit="m/s")
 ##########################

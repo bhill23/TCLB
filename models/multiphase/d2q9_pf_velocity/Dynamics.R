@@ -37,14 +37,13 @@ AddDensity(name="V", dx=0, dy=0, group="Vel")
 #	Phase-field stencil for finite differences
 AddField('PhaseF',stencil2d=1, group="PF")
 
+AddDensity(name="Iterations", dx=0, dy=0, group="Vel")
 #	Non-Newtonian properties
-AddDensity(name="StrainRate", dx=0, dy=0, group="NN")
+AddDensity(name="StrainRate", dx=0, dy=0, group="HBF")
 # for (D in c('Dxx','Dyy','Dxy')){
-# 	AddDensity(name=D, dx=0, dy=0, group="NN")
+# 	AddDensity(name=D, dx=0, dy=0, group="HBF")
 # }
-AddDensity(name="Tau", dx=0, dy=0, group="NN")
-
-AddDensity(name="Iterations", dx=0, dy=0, group="NN")
+AddDensity(name="Tau", dx=0, dy=0, group="HBF")
 
 #	Additional access required for outflow boundaries
 if (Options$Outflow){
@@ -63,10 +62,10 @@ if (Options$RT) {
 	# initialisation
 	AddStage("PhaseInit" , "Init_phase" 		, save=Fields$group %in% c("PF"))
 	AddStage("WallInit"  , "Init_wallNorm"    	, save=Fields$group %in% c("nw"))
-	AddStage("BaseInit"  , "Init_distributions" , save=Fields$group %in% c("g","h","Vel","NN"))
+	AddStage("BaseInit"  , "Init_distributions" , save=Fields$group %in% c("g","h","Vel","HBF"))
 	
 	# iteration
-	AddStage("BaseIter"  , "calcHydroIter" 		, save=Fields$group %in% c("g","h","Vel","NN")		, load=DensityAll$group %in% c("g","h","Vel","NN"))
+	AddStage("BaseIter"  , "calcHydroIter" 		, save=Fields$group %in% c("g","h","Vel","HBF")		, load=DensityAll$group %in% c("g","h","Vel","HBF"))
     AddStage("PhaseIter" , "calcPhaseFIter"		, save=Fields$name  %in% c("PhaseF","PhaseOld") , load=DensityAll$group=="h")
   	AddStage("WallIter"  , "calcWallPhaseIter"  , save=Fields$group %in% c("PF")				, load=DensityAll$group=="nw") 
 } else if (Options$Outflow) {
@@ -74,22 +73,22 @@ if (Options$RT) {
 	# initialisation
 	AddStage("PhaseInit" , "Init_phase"			, save=Fields$group %in% c("PF"))
 	AddStage("WallInit"  , "Init_wallNorm"		, save=Fields$group %in% c("nw"))
-	AddStage("BaseInit"  , "Init_distributions"	, save=Fields$group %in% c("g","h","Vel","gold","hold","NN")) 
+	AddStage("BaseInit"  , "Init_distributions"	, save=Fields$group %in% c("g","h","Vel","gold","hold","HBF")) 
 	# iteration
-	AddStage("BaseIter"  , "calcHydroIter"      , save=Fields$group %in% c("g","h","Vel","nw","gold","hold","NN"), 
-												  load=DensityAll$group %in% c("g","h","Vel","nw","gold","hold","NN")) 
-	AddStage("PhaseIter" , "calcPhaseFIter"		, save=Fields$group %in% c("PF"), load=DensityAll$group %in% c("g","h","Vel","nw","gold","hold","NN"))
+	AddStage("BaseIter"  , "calcHydroIter"      , save=Fields$group %in% c("g","h","Vel","nw","gold","hold","HBF"), 
+												  load=DensityAll$group %in% c("g","h","Vel","nw","gold","hold","HBF")) 
+	AddStage("PhaseIter" , "calcPhaseFIter"		, save=Fields$group %in% c("PF"), load=DensityAll$group %in% c("g","h","Vel","nw","gold","hold","HBF"))
 	AddStage("WallIter"  , "calcWallPhaseIter"	, save=Fields$group %in% c("PF"), load=DensityAll$group=="nw")	
 } else {
 	
 	# initialisation
 	AddStage("PhaseInit" , "Init_phase"			, save=Fields$group %in% c("PF"))
 	AddStage("WallInit"  , "Init_wallNorm"		, save=Fields$group %in% c("nw"))
-	AddStage("BaseInit"  , "Init_distributions" , save=Fields$group %in% c("g","h","Vel","NN"))
+	AddStage("BaseInit"  , "Init_distributions" , save=Fields$group %in% c("g","h","Vel","HBF"))
 
 	# iteration
-	AddStage("BaseIter"  , "calcHydroIter"      , save=Fields$group %in% c("g","h","Vel","nw","NN") , load=DensityAll$group %in% c("g","h","Vel","nw","NN"))  # TODO: is nw needed here?
-	AddStage("PhaseIter" , "calcPhaseFIter"		, save=Fields$group %in% c("PF")			   , load=DensityAll$group %in% c("g","h","Vel","nw","NN"))
+	AddStage("BaseIter"  , "calcHydroIter"      , save=Fields$group %in% c("g","h","Vel","nw","HBF") , load=DensityAll$group %in% c("g","h","Vel","nw","HBF"))  # TODO: is nw needed here?
+	AddStage("PhaseIter" , "calcPhaseFIter"		, save=Fields$group %in% c("PF")			   , load=DensityAll$group %in% c("g","h","Vel","nw","HBF"))
 	AddStage("WallIter"  , "calcWallPhaseIter"	, save=Fields$group %in% c("PF")			   , load=DensityAll$group %in% c("nw"))	
 }
 
@@ -140,8 +139,8 @@ AddSetting(name="radAngle",default='1.570796', comment='Contact angle in radians
 #AddSetting(name="tau_h", comment='relaxation time (high density fluid)')
 AddSetting(name="Viscosity_l", Consistency_index_l='Viscosity_l', comment='kinematic viscosity')
 AddSetting(name="Viscosity_h", Consistency_index_h='Viscosity_h', comment='kinematic viscosity')
-AddSetting(name="Consistency_index_l", default=0.16666666, comment='kinematic viscosity')
-AddSetting(name="Consistency_index_h", default=0.16666666, comment='kinematic viscosity')
+AddSetting(name="Consistency_index_l", default=0.16666666, comment='kinematic power-law coefficient')
+AddSetting(name="Consistency_index_h", default=0.16666666, comment='kinematic power-law coefficient')
 AddSetting(name="n_l", default=1, comment='power law index')
 AddSetting(name="n_h", default=1, comment='power law index')
 AddSetting(name='Yield_stress_l', default=0.0, comment='Yield Stress')
