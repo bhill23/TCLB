@@ -1649,7 +1649,7 @@ CudaDeviceFunction void updateTrackers(real_t C){
 	switch (NodeType & NODE_ADDITIONALS) {
 		real_t location;
 		case NODE_Centerline:
-		    if ( fabs(xyzTrack-1) < 1e-3 )
+		    if ( fabs(xyzTrack-1) < 1e-3 || fabs(xyzTrack-4) < 1e-3 )
 		    {  // track along X
                 if (C < 0.5 && PhaseF(1,0,0) > 0.5)
                 {
@@ -1691,15 +1691,7 @@ CudaDeviceFunction void updateTrackers(real_t C){
 					AddToInterfacePosition1(location);
                     AddToVfront(W);
                 }
-		    } /* else if ( fabs(xyzTrack-4) < 1e-3 )
-		    {  // track reverse along X
-                if (C < 0.5 && PhaseF(-1,0,0) > 0.5)
-                {
-                    location = X - (C-0.5)/(C-PhaseF(-1,0,0));
-                    AddToInterfacePosition(location);
-				    AddToVback(U);
-			    }
-            } */
+		    }
 			break;
 		case NODE_Spiketrack:
 			if (C < 0.5 && PhaseF(0,1,0) > 0.5)
