@@ -162,7 +162,7 @@ if (Options$HBF){
 	AddSetting(name="PhaseField_l", default=0, comment='PhaseField gas')
 	AddSetting(name="PhaseField", 	   comment='Initial PhaseField distribution', zonal=T)
 	AddSetting(name="IntWidth", default=4,    comment='Anti-diffusivity coeff')
-	AddSetting(name="Interp_n", default=1, comment='polynomial degree of phase-field interpolation. Sharp interface when == 0')
+	AddSetting(name="Interpolation_type", default=2, comment='+ve for kinematic, -ve for dynamic. abs value: 1-sharp, 2-linear, 3-inverse')
 	AddSetting(name="omega_phi", comment='one over relaxation time (phase field)')
 	AddSetting(name="M", omega_phi='1.0/(3*M+0.5)', default=0.02, comment='Mobility')
 	AddSetting(name="sigma", comment='surface tension')
@@ -213,8 +213,10 @@ if (Options$HBF){
 } else {
 	# AddSetting(name="tau_l", comment='relaxation time (low density fluid)')
 	# AddSetting(name="tau_h", comment='relaxation time (high density fluid)')
-	AddSetting(name="Viscosity_l", comment='kinematic viscosity')
-	AddSetting(name="Viscosity_h", comment='kinematic viscosity')
+	AddSetting(name="Viscosity_l", default=0.16666666, comment='kinematic viscosity')
+	AddSetting(name="Viscosity_h", default=0.16666666, comment='kinematic viscosity')
+	AddSetting(name="Consistency_index_l", Viscosity_l='Consistency_index_l', comment='convenience setting for viscosity')
+	AddSetting(name="Consistency_index_h", Viscosity_h='Consistency_index_h', comment='convenience setting for viscosity')
 }
 	
 	
