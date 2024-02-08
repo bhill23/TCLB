@@ -48,41 +48,24 @@ if (Options$altContactAngle){
 } else {
     AddField("PhaseF",stencil3d=1, group="PF")
 }
-
-
 AddDensity(name="Iterations", dx=0, dy=0, dz=0, group="Vel")
 if (Options$HBF){
 	AddDensity(name="StrainRate", dx=0, dy=0, dz=0, group="HBF")
+	AddDensity(name="Tau", dx=0, dy=0, dz=0, group="HBF")
 	# for (D in c('Dxx','Dxy','Dxz','Dyy','Dyz','Dzz')){
 	# 	AddDensity(name=D, dx=0, dy=0, dz=0, group="HBF")
 	# }
-
-	# Don't need to explicitly keep Tau, StrainRate is sufficent with a bit extra work
-	# AddDensity(name="Tau", dx=0, dy=0, dz=0, group="HBF")
-
-	# AddDensity(name="nu0_l", dx=0, dy=0, dz=0, group="HBF")
-	# AddDensity(name="nu0_h", dx=0, dy=0, dz=0, group="HBF")
-	# AddDensity(name="nuc_l", dx=0, dy=0, dz=0, group="HBF")
-	# AddDensity(name="nuc_h", dx=0, dy=0, dz=0, group="HBF")
-
-	# AddSetting(name="nu0_l", comment='Do Not Set')#, nu0_l='Consistency_index_l*Density_l * pow(Reg_m,1.0-n_l) + Reg_m * Yield_stress_l'
-	# AddSetting(name="nu0_h", comment='Do Not Set')#, nu0_h='Consistency_index_h*Density_h * pow(Reg_m,1.0-n_h) + Reg_m * Yield_stress_h'
-	# AddSetting(name="nuc_l", comment='Do Not Set')#, nuc_l='Yield_stress_l/strainLimit * (1.0 - exp(-Reg_m*strainLimit)) + Consistency_index_l*Density_l * pow(strainLimit/(1.0 - exp(-Reg_m*strainLimit)),n_l-1.0)'
-	# AddSetting(name="nuc_h", comment='Do Not Set')#, nuc_h='Yield_stress_h/strainLimit * (1.0 - exp(-Reg_m*strainLimit)) + Consistency_index_h*Density_h * pow(strainLimit/(1.0 - exp(-Reg_m*strainLimit)),n_h-1.0)'
-
 	save_initial   = c(save_initial,  "HBF")
     save_iteration = c(save_iteration,"HBF")
     load_iteration = c(load_iteration,"HBF")
     load_phase     = c(load_phase,    "HBF")
-
 }
-
-
-
 if (Options$OutFlow){
 	for (d in rows(DensityAll)) {
 		AddField( name=d$name, dx=-d$dx-1, dy=-d$dy, dz=-d$dz )
 		AddField( name=d$name, dx=-d$dx+1, dy=-d$dy, dz=-d$dz )
+		AddField( name=d$name, dx=-d$dx, dy=-d$dy-1, dz=-d$dz )
+		AddField( name=d$name, dx=-d$dx, dy=-d$dy+1, dz=-d$dz )
 	}
 	AddField(name="U",dx=c(-1,0,0))
 	AddField(name="U",dx=c(1,0,0))
@@ -147,6 +130,7 @@ if (Options$altContactAngle){
 	AddQuantity(name="Iterations",unit="1")
 if (Options$HBF){
 	AddQuantity(name="StrainRate", unit="1/s")
+	AddQuantity(name="Tau", unit="1")
 	# for (D in c('Dxx','Dxy','Dxz','Dyy','Dyz','Dzz')){
 	# 	AddQuantity(name=D, unit="1")
 	# }
@@ -208,7 +192,7 @@ if (Options$HBF){
 	AddSetting(name='Yield_stress_l', default=0.0, comment='Yield Stress')
 	AddSetting(name='Yield_stress_h', default=0.0, comment='Yield Stress')
 	
-	AddSetting(name='Reg_m', default=1e10, comment='Regularisation Parameter')
+	AddSetting(name='Reg_m', default=1e9, comment='Regularisation Parameter')
 	AddSetting(name='strainLimit', default=1e-12, comment='highest strain rate at which interpolation is used')
 } else {
 	# AddSetting(name="tau_l", comment='relaxation time (low density fluid)')
@@ -218,9 +202,6 @@ if (Options$HBF){
 	AddSetting(name="Consistency_index_l", Viscosity_l='Consistency_index_l', comment='convenience setting for viscosity')
 	AddSetting(name="Consistency_index_h", Viscosity_h='Consistency_index_h', comment='convenience setting for viscosity')
 }
-	
-	
-	#	Inputs: Flow Properties
 	AddSetting(name="VelocityX", default=0.0, comment='inlet/outlet/init velocity', zonal=T)
 	AddSetting(name="VelocityY", default=0.0, comment='inlet/outlet/init velocity', zonal=T)
 	AddSetting(name="VelocityZ", default=0.0, comment='inlet/outlet/init velocity', zonal=T)
@@ -228,11 +209,11 @@ if (Options$HBF){
 	AddSetting(name="GravitationX", default=0.0, comment='applied (rho)*GravitationX')
 	AddSetting(name="GravitationY", default=0.0, comment='applied (rho)*GravitationY')
 	AddSetting(name="GravitationZ", default=0.0, comment='applied (rho)*GravitationZ')
+	# AddSetting(name="RampTime", default=0.0, comment='time to ramp up Gravity')
 	AddSetting(name="BuoyancyX", default=0.0, comment='applied (rho_h-rho)*BuoyancyX')
 	AddSetting(name="BuoyancyY", default=0.0, comment='applied (rho_h-rho)*BuoyancyY')
 	AddSetting(name="BuoyancyZ", default=0.0, comment='applied (rho_h-rho)*BuoyancyZ')
 	AddSetting(name="fixedIterator", default=10.0, comment='fixed iterator for velocity/viscosity calculation')
-
 ##################################
 ########TRACKING VARIABLES########
 ##################################
@@ -272,6 +253,8 @@ if (Options$HBF){
 	if (Options$OutFlow){
 		AddNodeType(name="ENeumann", group="BOUNDARY")
 		AddNodeType(name="WNeumann", group="BOUNDARY")
+		AddNodeType(name="NNeumann", group="BOUNDARY")
+		AddNodeType(name="SNeumann", group="BOUNDARY")
 		AddNodeType(name="EConvect", group="BOUNDARY")
 		AddNodeType(name="WConvect", group="BOUNDARY")
 	}
@@ -294,6 +277,8 @@ if (Options$HBF){
 	AddGlobal(name="LiqTotalVelocityZ", comment='use to determine avg velocity of droplets', unit="m/s")
 	AddGlobal(name="LiqTotalPhase",	   		comment='use in line with LiqTotalVelocity to determine average velocity', unit="1")
 	AddGlobal(name="FluxNodeCount",comment='nodes in flux region', unit="1")
+	AddGlobal(name="GasTotalViscosity", comment="use to determine avg viscosity of bubbles", unit="Pa.s")
+	AddGlobal(name="LiqTotalViscosity", comment="use to determine avg viscosity of droplets", unit="Pa.s")
 	AddGlobal(name="FluxX",comment='flux in x direction for flux_nodes', unit="1")
 	AddGlobal(name="FluxY",comment='flux in y direction for flux_nodes', unit="1")
 	AddGlobal(name="FluxZ",comment='flux in z direction for flux_nodes', unit="1")

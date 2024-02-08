@@ -241,7 +241,7 @@ CudaDeviceFunction real_t getRho(){
 		real_t current_phase = getPhaseField();
 		// return Density_l + (Density_h-Density_l) * (current_phase - PhaseField_l)/(PhaseField_h - PhaseField_l);
 		return InterfaceUpdateLinear((current_phase - PhaseField_l)/(PhaseField_h - PhaseField_l), Density_l, Density_h);
-		// return InterfaceUpdateN((current_phase - PhaseField_l)/(PhaseField_h - PhaseField_l), Density_l, Density_h);
+		// return InterfaceUpdate((current_phase - PhaseField_l)/(PhaseField_h - PhaseField_l), Density_l, Density_h);
 	}
 }
 CudaDeviceFunction real_t getPhaseField(){
@@ -277,6 +277,13 @@ CudaDeviceFunction real_t getStrainRate(){
 		return StrainRate;
 	}
 }
+CudaDeviceFunction real_t getTau(){
+	if ( IamWall || IamSolid ) {
+		return 0.0;
+	} else {
+		return Tau;
+	}
+}
 
 <?R for (D in c('Dxx','Dxy','Dxz','Dyy','Dyz','Dzz')){ ?>
 //CudaDeviceFunction real_t get<?%s D ?>(){
@@ -288,7 +295,8 @@ CudaDeviceFunction real_t getViscosity(){
 	if ( IamWall || IamSolid ) {
 		return 0.0;
 	} else {
-		return (calcTau(PhaseF(0,0,0),StrainRate)-0.5)/3.0;
+		// return (calcTau(PhaseF(0,0,0),StrainRate)-0.5)/3.0;
+		return (Tau-0.5)/3.0;
 	}
 }
 #endif
@@ -777,8 +785,10 @@ CudaDeviceFunction void Init_distributions(){
 	#endif
 
 #ifdef OPTIONS_HBF
-	StrainRate = 0.01; //
-	// Tau = 0.5 + 3.0 * InterfaceUpdate((PhaseF - PhaseField_h)/(PhaseField_h-PhaseField_l), Consistency_index_l, Consistency_index_h);
+	StrainRate = 0.0; 
+	// Tau = 0.5 + 3.0 * InterfaceUpdateLinear((PhaseF - PhaseField_h)/(PhaseField_h-PhaseField_l), Consistency_index_l, Consistency_index_h);
+	Tau = calcTau(PhaseF, StrainRate);
+	Iterations = 0;
 #endif
 }
 
@@ -808,7 +818,7 @@ inline CudaDeviceFunction real_t InterfaceUpdateLinear(real_t normPhase, real_t 
 	return lower + normPhase*(upper - lower);
 }
 
-CudaDeviceFunction real_t InterfaceUpdateN(real_t normPhase, real_t lower, real_t upper) {
+CudaDeviceFunction real_t InterfaceUpdate(real_t normPhase, real_t lower, real_t upper) {
 	if (SETTINGS_EQUAL(fabs(Interpolation_type),1.0)) {
 		// Sharp
 		if (normPhase <= 0.5){
@@ -819,10 +829,13 @@ CudaDeviceFunction real_t InterfaceUpdateN(real_t normPhase, real_t lower, real_
 	} else if (SETTINGS_EQUAL(fabs(Interpolation_type),2.0)) {
 		// Linear update
 		return InterfaceUpdateLinear(normPhase, lower, upper);
-	} else if (SETTINGS_EQUAL(fabs(Interpolation_type),3.0)) { 
+	} else if (SETTINGS_EQUAL(fabs(Interpolation_type),3.0)) {
+		// Logarithmic update
+		return exp(normPhase * (log(upper) - log(lower)) + log(lower));
+	} else if (SETTINGS_EQUAL(fabs(Interpolation_type),4.0)) { 
 		// Inverse update
 		return 1.0 / (normPhase * (1.0/upper - 1.0/lower) + 1.0/lower);
-	} else { // Should never happen - Invalid Interpolation_type value
+	} else { // Shouldn't happen - Invalid Interpolation_type value
 		return 1.0 / 0.0;
 	}
 		
@@ -835,11 +848,10 @@ CudaDeviceFunction real_t InterfaceUpdateN(real_t normPhase, real_t lower, real_
 };
 
 #ifdef OPTIONS_HBF
-	inline CudaDeviceFunction real_t HBF_reg (real_t strain, real_t yield, real_t mu, real_t n) {
+	CudaDeviceFunction real_t HBF_reg (real_t strain, real_t yield, real_t mu, real_t n) {
 		// Regularised Herschel-Bulkley fluid apparent DYNAMIC viscosity
-		// Newtonian early exit
-		if (n == 1.0 && yield == 0.0){ return mu; }
-		return yield/strain * (1.0 - exp(-Reg_m*strain)) + mu * pow(strain/(1.0 - exp(-Reg_m*strain)),n-1.0);
+		if (n == 1.0 && yield == 0.0){ return mu; } //Newtonian
+		else { return yield/strain * (1.0 - exp(-Reg_m*strain)) + mu * pow(strain/(1.0 - exp(-Reg_m*strain)),n-1.0); }
 	}
 
 	CudaDeviceFunction real_t HBF_reg_l (real_t strain) {
@@ -873,20 +885,18 @@ CudaDeviceFunction real_t InterfaceUpdateN(real_t normPhase, real_t lower, real_
 			tau = 0.5 + 3.0 * HBF_reg_h(strain) / Density_h;
 		} else {
 			real_t pf_norm = (pf-PhaseField_l)/(PhaseField_h - PhaseField_l);
-			real_t mu_l = HBF_reg_l(strain);// / Density_l;
-			real_t mu_h = HBF_reg_h(strain);// / Density_h;
+			real_t mu_l = HBF_reg_l(strain);
+			real_t mu_h = HBF_reg_h(strain);
 			real_t v = -999;  //Cause error if Interpolation_type set incorrectly
 			if ( Interpolation_type > 0.0 ) { //Kinematic
-				v = InterfaceUpdateN(pf_norm, mu_l / Density_l, mu_h / Density_h);	
+				v = InterfaceUpdate(pf_norm, mu_l / Density_l, mu_h / Density_h);	
 			} else if ( Interpolation_type < 0.0 ) { //Dynamic
-				v = InterfaceUpdateN(pf_norm, mu_l, mu_h);
+				v = InterfaceUpdate(pf_norm, mu_l, mu_h);
 				v /= InterfaceUpdateLinear(pf_norm, Density_l, Density_h);;
-				// v /= InterfaceUpdateN(pf_norm, Density_l, Density_h);
+				// v /= InterfaceUpdate(pf_norm, Density_l, Density_h);
 			}
-
 			tau = 0.5 + 3.0 * v;
-		
-			}
+		}
 		return tau;
 	}
 #else
@@ -894,22 +904,17 @@ CudaDeviceFunction real_t InterfaceUpdateN(real_t normPhase, real_t lower, real_
 		// Restrict pf to range (PhaseField_l,PhaseField_h)
 		real_t _pf = pf < PhaseField_l ? PhaseField_l : pf > PhaseField_h ? PhaseField_h : pf;
 		real_t pf_norm = (_pf-PhaseField_l)/(PhaseField_h - PhaseField_l);
-
 		real_t v = -999;  //Cause error if Interpolation_type set incorrectly
 		if ( Interpolation_type > 0.0 ) { //Kinematic
-			v = InterfaceUpdateN(pf_norm, Viscosity_l, Viscosity_h);		
+			v = InterfaceUpdate(pf_norm, Viscosity_l, Viscosity_h);		
 		} else if ( Interpolation_type < 0.0 ) { //Dynamic
-			v = InterfaceUpdateN(pf_norm, Viscosity_l*Density_l, Viscosity_h*Density_h);
+			v = InterfaceUpdate(pf_norm, Viscosity_l*Density_l, Viscosity_h*Density_h);
 			v /= InterfaceUpdateLinear(pf_norm, Density_l, Density_h);
-			// v /= InterfaceUpdateN(pf_norm, Density_l, Density_h);
+			// v /= InterfaceUpdate(pf_norm, Density_l, Density_h);
 		}
-
 		return 0.5 + 3.0 * v;
 	}
 #endif
-
-
-
 
 CudaDeviceFunction void calc_Fp(real_t *f, real_t pressure, vector_t gPhi){
 	f[0] = (-1.0/3.0) * pressure * (Density_h-Density_l) * gPhi.x;
@@ -917,9 +922,9 @@ CudaDeviceFunction void calc_Fp(real_t *f, real_t pressure, vector_t gPhi){
 	f[2] = (-1.0/3.0) * pressure * (Density_h-Density_l) * gPhi.z;
 }
 CudaDeviceFunction void calc_Fb(real_t *f, real_t rho){
-    f[0] = (Density_h-rho)*BuoyancyX + rho*GravitationX;
-	f[1] = (Density_h-rho)*BuoyancyY + rho*GravitationY;
-	f[2] = (Density_h-rho)*BuoyancyZ + rho*GravitationZ;
+    f[0] = (Density_h-rho)*BuoyancyX + rho*GravitationX;//*Gravscale;
+	f[1] = (Density_h-rho)*BuoyancyY + rho*GravitationY;//*Gravscale;
+	f[2] = (Density_h-rho)*BuoyancyZ + rho*GravitationZ;//*Gravscale;
 }
 CudaDeviceFunction void calc_Fs(real_t *f, real_t mu, vector_t gPhi){
 	#ifdef OPTIONS_thermo
@@ -962,7 +967,7 @@ CudaDeviceFunction void CollisionMRT(){
 	int i, j;
 	real_t C  = PhaseF;
     real_t mu = calcMu( C );
-	real_t DynVisc, rho, p; 			// Macroscopic Properties
+	real_t DynVisc, rho, p;			// Macroscopic Properties
 	vector_t n, gradPhi;					// Phase field gradients
 	real_t magnPhi;							// Normals
 	real_t F_pressure[3], F_body[3], F_mu[3], F_surf[3], F_total[3]; // Forces
@@ -970,22 +975,17 @@ CudaDeviceFunction void CollisionMRT(){
 	real_t F_phi[hPops], heq[hPops];				// Phase field collision terms
 	real_t F_i[27];							// Momentum distribution forcing term
 	real_t m[27]; 							//MRT Details
-	real_t u_curr = U, v_curr = V, w_curr = W;
-	real_t u_tmp[1] = {U}, v_tmp[1] = {V}, w_tmp[1] = {W};// update vairables for viscous force iterations
+	real_t u_tmp, v_tmp, w_tmp;// update vairables for viscous force iterations
 	#ifdef OPTIONS_HBF
-	real_t tau_ = calcTau(C,StrainRate), strain_rate = StrainRate;
+	real_t strainrate;
+	real_t tau = Tau;
 	#else
-	real_t tau_ = calcTau(C);
+	real_t tau = calcTau(C);
 	#endif
-
-	//Use local variables
-	#define U u_curr
-	#define V v_curr
-	#define W w_curr
 
 	// Find Macroscopic Details
 	rho = InterfaceUpdateLinear((C - PhaseField_l)/(PhaseField_h - PhaseField_l), Density_l, Density_h);
-	// rho = InterfaceUpdateN((C - PhaseField_l)/(PhaseField_h - PhaseField_l), Density_l, Density_h);
+	// rho = InterfaceUpdate((C - PhaseField_l)/(PhaseField_h - PhaseField_l), Density_l, Density_h);
 
 	updateMyGlobals( C );
 	
@@ -996,7 +996,7 @@ CudaDeviceFunction void CollisionMRT(){
 		EQ$Req[1] = PV("p")
 		EQ$feq = solve(M) %*% EQ$Req
 		Omega = PV(rep(1,sum(selR)))
-		Omega[5:9] = PV("tau_")^(-1)
+		Omega[5:9] = PV("tau")^(-1)
 		Omega[1:4] = PV(1)
 		m0 = PV("m0[",1:27-1,"]")
 		C(m0[selR], (M %*% g)[selR])
@@ -1026,17 +1026,9 @@ CudaDeviceFunction void CollisionMRT(){
 	Iterations = fixedIterator;
 	for (j=0;j<fixedIterator;j++) {
 
-		
-		// u_tmp[1] = u_tmp[0];
-		// v_tmp[1] = v_tmp[0];
-		// w_tmp[1] = w_tmp[0];
-		u_tmp[0] = u_curr;
-		v_tmp[0] = v_curr;
-		w_tmp[0] = w_curr;
-
-		// #ifdef OPTIONS_HBF
-		// tau_tmp[1] = tau_tmp[0];
-		// #endif
+		u_tmp = U;
+		v_tmp = V;
+		w_tmp = W;
 			
 	<?R
 		C(m[selR], (m0 - EQ$Req)[selR] * Omega)
@@ -1060,60 +1052,53 @@ CudaDeviceFunction void CollisionMRT(){
 		D[4] = -3.0/2.0 * stress[4]; //YZ
 		D[5] = -3.0/2.0 * stress[5]; //ZZ
 		
-		// Traceless part for deformation.
+		// Stress Tensor is already deviatoric, so no need to subtract 1/3 * trace (https://en.wikipedia.org/wiki/Infinitesimal_strain_theory#Equivalent_strain)
 		// real_t DtmpX = D[0], DtmpY = D[3], DtmpZ = D[5];
 		// D[0] = D[0] - (DtmpX+DtmpY+DtmpZ)/3.;
         // D[3] = D[3] - (DtmpX+DtmpY+DtmpZ)/3.;
 		// D[5] = D[5] - (DtmpX+DtmpY+DtmpZ)/3.;
 
-		strain_rate = sqrt( 2.0*(D[0]*D[0] + D[3]*D[3] + D[5]*D[5] + 2.0*(D[1]*D[1] + D[2]*D[2] + D[4]*D[4])) );
-		tau_ = calcTau(C, strain_rate);
+		// StrainRate = sqrt( 2.0*(D[0]*D[0] + D[3]*D[3] + D[5]*D[5] + 2.0*(D[1]*D[1] + D[2]*D[2] + D[4]*D[4])) );
+		// tau = calcTau(C, StrainRate);
+		strainrate = sqrt( 2.0*(D[0]*D[0] + D[3]*D[3] + D[5]*D[5] + 2.0*(D[1]*D[1] + D[2]*D[2] + D[4]*D[4])) );
+		tau = calcTau(C, strainrate);
 		#endif
 
-		F_mu[0] = (0.5-tau_) * (Density_h-Density_l) * (stress[0]*gradPhi.x + stress[1]*gradPhi.y + stress[2]*gradPhi.z);
-		F_mu[1] = (0.5-tau_) * (Density_h-Density_l) * (stress[1]*gradPhi.x + stress[3]*gradPhi.y + stress[4]*gradPhi.z);
-		F_mu[2] = (0.5-tau_) * (Density_h-Density_l) * (stress[2]*gradPhi.x + stress[4]*gradPhi.y + stress[5]*gradPhi.z);
+		F_mu[0] = (0.5-tau) * (Density_h-Density_l) * (stress[0]*gradPhi.x + stress[1]*gradPhi.y + stress[2]*gradPhi.z);
+		F_mu[1] = (0.5-tau) * (Density_h-Density_l) * (stress[1]*gradPhi.x + stress[3]*gradPhi.y + stress[4]*gradPhi.z);
+		F_mu[2] = (0.5-tau) * (Density_h-Density_l) * (stress[2]*gradPhi.x + stress[4]*gradPhi.y + stress[5]*gradPhi.z);
 		F_total[0] = F_surf[0] + F_pressure[0] + F_body[0] + F_mu[0];
 		F_total[1] = F_surf[1] + F_pressure[1] + F_body[1] + F_mu[1];
 		F_total[2] = F_surf[2] + F_pressure[2] + F_body[2] + F_mu[2];
 
 		<?R 	C( u, m0[2:4] + 0.5 * F_total * rho.inv) ?>
+
+
+		// Relax Velocity update if not converging
+		if (j > min(10.0,fixedIterator/2)) {
+			real_t relax_ratio = 4.0;
+			U = (relax_ratio*U + u_tmp) / (relax_ratio+1.0);
+			V = (relax_ratio*V + v_tmp) / (relax_ratio+1.0);
+			W = (relax_ratio*W + w_tmp) / (relax_ratio+1.0);
+		} 
 				
 		if (U != U){ Iterations=0; break; } // break if U is nan
 
-		// Secant method
-		// U = u_tmp[0] - U * (u_tmp[0] - u_tmp[1]) / (U - u_tmp[0]);
-		// V = v_tmp[0] - V * (v_tmp[0] - v_tmp[1]) / (V - v_tmp[0]);
-		// W = w_tmp[0] - W * (w_tmp[0] - w_tmp[1]) / (W - w_tmp[0]);
-		// #ifdef OPTIONS_HBF
-		// tau_tmp[0] = tau_tmp[1] - (tau_tmp[0] - u_tmp[1]) / ((tau_tmp[0] - u_tmp[1]) - 1.0);
-		// #endif
-
 		if (
-		// #ifdef OPTIONS_HBF
-		// 	fabs((tau_curr - tau_prev)/tau_prev) < Iteration_tol &&
-		// #endif
-			fabs((U - u_tmp[0])/u_tmp[0]) < Iteration_tol &&
-			fabs((V - v_tmp[0])/v_tmp[0]) < Iteration_tol &&
-			fabs((W - w_tmp[0])/w_tmp[0]) < Iteration_tol
+			fabs((U - u_tmp)/u_tmp) < Iteration_tol &&
+			fabs((V - v_tmp)/v_tmp) < Iteration_tol &&
+			fabs((W - w_tmp)/w_tmp) < Iteration_tol
 			){ Iterations = j; break; }
 	}
 	//Indicate which variable was reponsible for not breaking out of loop
 	#ifdef OPTIONS_HBF
-	// if ( abs((tau_curr - tau_prev)/tau_prev) > Iteration_tol ) {		Iterations += 1;	}
-	StrainRate = strain_rate;
+	// if ( abs((tau - tau_prev)/tau_prev) > Iteration_tol ) {		Iterations += 1;	}
+	StrainRate = strainrate;
+	Tau = tau;
 	#endif
 	// if ( abs((U - u_prev)/u_prev) > Iteration_tol || abs((V - u_prev)/u_prev) > Iteration_tol || abs((W - u_prev)/u_prev) > Iteration_tol ) {
 	// 	Iterations += 2;
 	// }
-
-	#undef U
-	#undef V
-	#undef W
-
-	U = u_curr;
-	V = v_curr;
-	W = w_curr;
 
 	// PHASE FIELD POPULATION UPDATE:
 	tmp1 = (1.0 - 4.0*(C - 0.5)*(C - 0.5))/IntWidth;
@@ -1137,8 +1122,6 @@ CudaDeviceFunction void CollisionMRT(){
 		C(m, m0 - (m0 - EQ$Req + mF*0.5)[selR] * Omega + mF)
 		C(g, invM %*% m)
 	?>
-
-	
 
     updateTrackers( C );
 }
@@ -1216,6 +1199,22 @@ CudaDeviceFunction void WNeumann(){
 		if (Options$OutFlow){
 			C(g, PV(paste0(g_neighbours,"(",-Density$dx[Density$group=="g"]+1,",",-Density$dy[Density$group=="g"],",",-Density$dz[Density$group=="g"],")")))	
 			C(h, PV(paste0(h_neighbours,"(",-Density$dx[Density$group=="h"]+1,",",-Density$dy[Density$group=="h"],",",-Density$dz[Density$group=="h"],")")))	
+		}
+	?>
+}
+CudaDeviceFunction void NNeumann(){
+	<?R
+		if (Options$OutFlow){
+			C(g, PV(paste0(g_neighbours,"(",-Density$dx[Density$group=="g"],",",-Density$dy[Density$group=="g"]-1,",",-Density$dz[Density$group=="g"],")")))	
+			C(h, PV(paste0(h_neighbours,"(",-Density$dx[Density$group=="h"],",",-Density$dy[Density$group=="h"]-1,",",-Density$dz[Density$group=="h"],")")))	
+		}
+	?>
+}
+CudaDeviceFunction void SNeumann(){
+	<?R
+		if (Options$OutFlow){
+			C(g, PV(paste0(g_neighbours,"(",-Density$dx[Density$group=="g"],",",-Density$dy[Density$group=="g"]+1,",",-Density$dz[Density$group=="g"],")")))	
+			C(h, PV(paste0(h_neighbours,"(",-Density$dx[Density$group=="h"],",",-Density$dy[Density$group=="h"]+1,",",-Density$dz[Density$group=="h"],")")))	
 		}
 	?>
 }
@@ -1411,10 +1410,6 @@ CudaDeviceFunction void BounceBack(){
 }
 //############//
 
-// CudaDeviceFunction vector_t getA(){
-// 	vector_t ret;
-// 	return ret;
-// }
 CudaDeviceFunction float2 Color() {
         float2 ret;
         // vector_t u = getU();
@@ -1427,6 +1422,7 @@ CudaDeviceFunction float2 Color() {
         return ret;
 }
 
+/*
 #ifdef OPTIONS_BGK
 CudaDeviceFunction void CollisionBGK(){
     PhaseF = PhaseF(0,0,0);
@@ -1441,22 +1437,15 @@ CudaDeviceFunction void CollisionBGK(){
 	real_t tmp1, D[6], stress[6]={0.0,0.0,0.0,0.0,0.0,0.0};     // Stress tensor calculation
 	real_t F_phi[hPops], heq[hPops];			// Phase field collision terms
 	real_t F_i[27];					// Momentum distribution forcing term
-	real_t u_prev, v_prev, w_prev;// update vairables for viscous force iterations
-	real_t u_curr = U, v_curr = V, w_curr = W;
 	#ifdef OPTIONS_HBF
-	real_t tau_prev, tau_curr = calcTau(C,StrainRate), strain_rate = StrainRate;;
+	real_t tau = calcTau(C,StrainRate);
 	#else
-	real_t tau_curr = calcTau(C);
+	real_t tau = calcTau(C);
 	#endif
-
-	//Use local variables
-	#define U u_curr
-	#define V v_curr
-	#define W w_curr
 
 	// Find Macroscopic Details
 	rho = InterfaceUpdateLinear((C - PhaseField_l)/(PhaseField_h - PhaseField_l), Density_l, Density_h);
-	// rho = InterfaceUpdateN((C - PhaseField_l)/(PhaseField_h - PhaseField_l), Density_l, Density_h);
+	// rho = InterfaceUpdate((C - PhaseField_l)/(PhaseField_h - PhaseField_l), Density_l, Density_h);
 	p = <?R C(sum(g)) ?>;
 
 	updateMyGlobals( C );
@@ -1478,9 +1467,7 @@ CudaDeviceFunction void CollisionBGK(){
 		u_prev = U;
 		v_prev = V;
 		w_prev = W;
-		#ifdef OPTIONS_HBF
-		tau_prev = tau_curr;
-		#endif
+
     // GAMMA AND EQUILIBRIUM
         mag = U*U + V*V + W*W;
         for (i=0; i< 27; i++){
@@ -1516,18 +1503,18 @@ CudaDeviceFunction void CollisionBGK(){
 		D[5] = -3.0/2.0 * stress[5];
 		
 		// Traceless part for deformation.
-		real_t DtmpX = D[0], DtmpY = D[3], DtmpZ = D[5];
-		D[0] = D[0] - (DtmpX+DtmpY+DtmpZ)/3.;
-        D[3] = D[3] - (DtmpX+DtmpY+DtmpZ)/3.;
-		D[5] = D[5] - (DtmpX+DtmpY+DtmpZ)/3.;
+		// real_t DtmpX = D[0], DtmpY = D[3], DtmpZ = D[5];
+		// D[0] = D[0] - (DtmpX+DtmpY+DtmpZ)/3.;
+        // D[3] = D[3] - (DtmpX+DtmpY+DtmpZ)/3.;
+		// D[5] = D[5] - (DtmpX+DtmpY+DtmpZ)/3.;
 
-		strain_rate = sqrt( 2.0*(D[0]*D[0] + D[3]*D[3] + D[5]*D[5] + 2.0*(D[1]*D[1] + D[2]*D[2] + D[4]*D[4])) );
-		tau_curr = calcTau(C, StrainRate);
+		StrainRate = sqrt( 2.0*(D[0]*D[0] + D[3]*D[3] + D[5]*D[5] + 2.0*(D[1]*D[1] + D[2]*D[2] + D[4]*D[4])) );
+		tau = calcTau(C, StrainRate);
 		#endif
 
-        F_mu[0] = (0.5-tau_curr)/tau_curr * (Density_h-Density_l) * (stress[0]*gradPhi.x + stress[1]*gradPhi.y + stress[2]*gradPhi.z);
-        F_mu[1] = (0.5-tau_curr)/tau_curr * (Density_h-Density_l) * (stress[1]*gradPhi.x + stress[3]*gradPhi.y + stress[4]*gradPhi.z);
-        F_mu[2] = (0.5-tau_curr)/tau_curr * (Density_h-Density_l) * (stress[2]*gradPhi.x + stress[4]*gradPhi.y + stress[5]*gradPhi.z);
+        F_mu[0] = (0.5-tau)/tau * (Density_h-Density_l) * (stress[0]*gradPhi.x + stress[1]*gradPhi.y + stress[2]*gradPhi.z);
+        F_mu[1] = (0.5-tau)/tau * (Density_h-Density_l) * (stress[1]*gradPhi.x + stress[3]*gradPhi.y + stress[4]*gradPhi.z);
+        F_mu[2] = (0.5-tau)/tau * (Density_h-Density_l) * (stress[2]*gradPhi.x + stress[4]*gradPhi.y + stress[5]*gradPhi.z);
         F_total[0] = F_surf[0] + F_pressure[0] + F_body[0] + F_mu[0];
         F_total[1] = F_surf[1] + F_pressure[1] + F_body[1] + F_mu[1];
         F_total[2] = F_surf[2] + F_pressure[2] + F_body[2] + F_mu[2];
@@ -1540,22 +1527,18 @@ CudaDeviceFunction void CollisionBGK(){
 		if (U != U){ Iterations=0; break; } // break if U is nan
 
 		if (
-		#ifdef OPTIONS_HBF
-			fabs((tau_curr - tau_prev)/tau_prev) < Iteration_tol &&
-		#endif
 			fabs((U - u_prev)/u_prev) < Iteration_tol &&
 			fabs((V - v_prev)/v_prev) < Iteration_tol &&
 			fabs((W - w_prev)/w_prev) < Iteration_tol
 			){ Iterations = j; break; }
     }
 	//Indicate which variable was reponsible for not breaking out of loop
-	#ifdef OPTIONS_HBF
-	if ( abs((tau_curr - tau_prev)/tau_prev) > Iteration_tol ) {		Iterations += 1;	}
-	StrainRate = strain_rate;
-	#endif
-	if ( abs((U - U_prev)/U_prev) > Iteration_tol || abs((V - V_prev)/V_prev) > Iteration_tol || abs((W - W_prev)/W_prev) > Iteration_tol ) {
-		Iterations += 2;
-	}
+	// #ifdef OPTIONS_HBF
+	// if ( abs((tau - tau_prev)/tau_prev) > Iteration_tol ) {		Iterations += 1;	}
+	// #endif
+	// if ( abs((U - U_prev)/U_prev) > Iteration_tol || abs((V - V_prev)/V_prev) > Iteration_tol || abs((W - W_prev)/W_prev) > Iteration_tol ) {
+		// Iterations += 2;
+	// }
 
 	// PHASE FIELD POPULATION UPDATE:
 	tmp1 = (1.0 - 4.0*(C - 0.5)*(C - 0.5))/IntWidth;
@@ -1570,23 +1553,15 @@ CudaDeviceFunction void CollisionBGK(){
 	for (i=0; i< 27; i++) {
 		F_i[i] = 3.0*wg[i] * (F_total[0]*d3q27_ex[i] + F_total[1]*d3q27_ey[i] + F_total[2]*d3q27_ez[i])/rho;
 	}
-	real_t omega_g = 1.0/tau_curr;
+	real_t omega_g = 1.0/tau;
 	<?R	
 		om= PV("omega_g")
 		C(g, g - (geq_bgk+0.5*Fi)*om + Fi)
 	?>
-
-	#undef U
-	#undef V
-	#undef W
-
-	U = u_curr;
-	V = v_curr;
-	W = w_curr;
-
     updateTrackers( C );
 }
 #endif
+*/
 
 //######UPDATE FUNCTIONS#######//
 CudaDeviceFunction void updateBoundary(){
@@ -1633,7 +1608,7 @@ CudaDeviceFunction void updateBoundary(){
 CudaDeviceFunction void updateMyGlobals(real_t pf){
 	real_t tmpPF = 1 - pf;
 	real_t rho = InterfaceUpdateLinear((pf - PhaseField_l)/(PhaseField_h - PhaseField_l), Density_l, Density_h);
-	// real_t rho = InterfaceUpdateN((pf - PhaseField_l)/(PhaseField_h - PhaseField_l), Density_l, Density_h);
+	// real_t rho = InterfaceUpdate((pf - PhaseField_l)/(PhaseField_h - PhaseField_l), Density_l, Density_h);
 	real_t u2mag = (U*U+V*V+W*W);
 	AddToTotalDensity( rho ); // Add globals of post-stream, pre-collide macroscopic globals.
 	AddToKineticEnergy( rho * u2mag );
@@ -1646,12 +1621,14 @@ CudaDeviceFunction void updateMyGlobals(real_t pf){
 	    AddToGasTotalVelocityZ( tmpPF*W );
 	    AddToGasTotalPhase( tmpPF );
 	    AddToXLocation( tmpPF*X );
+		AddToGasTotalViscosity( tmpPF*getViscosity() );
 	} else {
 	    AddToLiqTotalVelocity( pf*sqrt(u2mag));
 	    AddToLiqTotalVelocityX( U*pf );
 	    AddToLiqTotalVelocityY( V*pf );
 	    AddToLiqTotalVelocityZ( W*pf );
 	    AddToLiqTotalPhase( pf );
+		AddToLiqTotalViscosity( pf*getViscosity() );
 	}	
 
 	if ((NodeType & NODE_ADDITIONALS) == NODE_flux_nodes) {
@@ -1666,7 +1643,7 @@ CudaDeviceFunction void updateTrackers(real_t C){
 	switch (NodeType & NODE_ADDITIONALS) {
 		real_t location;
 		case NODE_Centerline:
-		    if ( fabs(xyzTrack-1) < 1e-3 || fabs(xyzTrack-4) < 1e-3 )
+		    if ( fabs(xyzTrack-1) < 1e-3 || fabs(xyzTrack-4) < 1e-3 ) //4 for historical reasons
 		    {  // track along X
                 if (C < 0.5 && PhaseF(1,0,0) > 0.5)
                 {
