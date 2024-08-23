@@ -4,7 +4,7 @@ std::string cbFailcheck::xmlname = "Failcheck";
 
 int cbFailcheck::Init() {
     Callback::Init();
-    currentlyactive = false;
+    // currentlyactive = false;
     const auto init_cart = [&](const Lattice<CartLattice>* lattice) {
         reg.dx = lattice->getLocalRegion().dx;
         reg.dy = lattice->getLocalRegion().dy;
@@ -27,8 +27,8 @@ int cbFailcheck::Init() {
 
 int cbFailcheck::DoIt() {
     Callback::DoIt();
-    if (currentlyactive) return EXIT_SUCCESS;
-    currentlyactive = true;
+    // if (currentlyactive) return EXIT_SUCCESS;
+    // currentlyactive = true;
 
     name_set components;
     const auto comp = node.attribute("what");

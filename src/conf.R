@@ -1085,3 +1085,14 @@ big_hex = function(x,bits=16) {
     }
     paste0("0x",ret)
 }
+big_bin = function(x,bits=16) {
+	x_ = x
+    ret = ""
+    while (x > 0 | bits > 0) {
+      a = x %% 2
+      ret = sprintf("%01x%s",a,ret)
+      x = (x-a) / 2
+      bits = bits - 1
+    }
+    sprintf("0b%0s  //%d",ret,as.integer(x_))
+}

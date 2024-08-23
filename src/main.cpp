@@ -57,7 +57,7 @@ class MainCallback {
                 eTime = elapsedTime;
                 all_iter = iter;
             }
-            int ups = (float)(1000. * all_iter) / eTime;  // Steps made per second
+            float ups = (float)(1000. * all_iter) / eTime;  // Steps made per second
             const double lbups = static_cast<double>(solver->getGlobalLatticeSize() * iter / elapsedTime);
             int desired_steps = ups / desired_fps;  // Desired steps per frame (so that on next frame fps = desired_fps)
             char per[1000];
@@ -78,7 +78,11 @@ class MainCallback {
                     sprintf(left, "%dh %2dm", left_h, left_m);
                 }
             }
-            sprintf(buf, "%8.1f MLBUps   %7.2f GB/s", lbups / 1000., (lbups * (2. * solver->lattice->model->fields.size() * sizeof(real_t) + sizeof(flag_t))) / 1e6);
+            sprintf(buf, "%8.1f MLBUps   %5.4f Itps   %7.2f GB/s", 
+			((double)lbups)/1000, 
+			ups,
+			( (double) lbups * ((double) 2 * solver->lattice->model->fields.size() * sizeof(real_t) + sizeof(flag_t))) / 1e6
+			);
             int per_len = 20;
             {
                 int i = 0;

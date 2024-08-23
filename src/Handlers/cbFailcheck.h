@@ -8,7 +8,7 @@
 
 class  cbFailcheck  : public  Callback  {
 	lbRegion reg;
-	bool currentlyactive;
+	// bool currentlyactive;
 	public:
 	static std::string xmlname;
 int Init ();

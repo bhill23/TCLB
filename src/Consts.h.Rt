@@ -25,10 +25,10 @@
 
 <?R
   for (n in rows(NodeTypes)) { ?>
-#define <?%-20s n$Index ?> <?%s big_hex(n$value) ?> <?R
+#define <?%-20s n$Index ?> <?%s big_bin(n$value) ?> <?R
   }
   for (n in rows(NodeTypeGroups)) { ?>
-#define <?%-20s n$Index ?> <?%s big_hex(n$mask) ?> <?R
+#define <?%-20s n$Index ?> <?%s big_bin(n$mask) ?> <?R
   }
 ?>
 <?R

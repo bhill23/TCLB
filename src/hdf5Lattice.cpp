@@ -205,7 +205,7 @@ int hdf5WriteLattice(const char * nm, Solver * solver, name_set * what, unsigned
 		xdmf_dataitem.append_attribute("Dimensions") = glue(" ") << std::make_pair(totaldim, rank);
 		xdmf_dataitem.append_attribute("Format") = "HDF";
 		xdmf_dataitem.append_attribute("Precision") = output_precision;
-		xdmf_dataitem.append_child(pugi::node_pcdata).set_value(glue(":") << basename << fieldname);
+		xdmf_dataitem.append_child(pugi::node_pcdata).set_value(glue(":") << basename.c_str() << fieldname);
 		std::string xdmf_dataitem_path = NameXPath(xdmf_dataitem);
 	}
 
@@ -276,7 +276,7 @@ int hdf5WriteLattice(const char * nm, Solver * solver, name_set * what, unsigned
 			xdmf_dataitem.append_attribute("Dimensions") = glue(" ") << std::make_pair(totaldim, rank);
 			xdmf_dataitem.append_attribute("Format") = "HDF";
 			xdmf_dataitem.append_attribute("Precision") = output_precision;
-			xdmf_dataitem.append_child(pugi::node_pcdata).set_value(glue(":") << basename << fieldname);
+			xdmf_dataitem.append_child(pugi::node_pcdata).set_value(glue(":") << basename.c_str() << fieldname);
 			std::string xdmf_dataitem_path = NameXPath(xdmf_dataitem);
 			if (options & HDF5_WRITE_LBM) {
 				xdmf_attribute = xdmf_grid.append_child("Attribute");

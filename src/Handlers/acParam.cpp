@@ -39,10 +39,10 @@ int acParam::Init () {
 			const Model::Setting& it = solver->lattice->model->settings.by_name(par);
 			const Model::ZoneSetting& zoneit = solver->lattice->model->zonesettings.by_name(par);
 			if (it) {
-                output("Setting %s to %s (%lf)\n", par.c_str(), value.c_str(), val);
+                output("Setting %s to %s (%le)\n", par.c_str(), value.c_str(), val);
 				solver->lattice->SetSetting(it, val);
 			} else if (zoneit) {
-                output("Setting %s in zone %s (%d) to %s (%lf)\n", par.c_str(), zone.c_str(), zone_number, value.c_str(), val);
+                output("Setting %s in zone %s (%d) to %s (%le)\n", par.c_str(), zone.c_str(), zone_number, value.c_str(), val);
 				solver->lattice->zSet.set(zoneit.id, zone_number, val);
 			} else {
 				if (permissive) {

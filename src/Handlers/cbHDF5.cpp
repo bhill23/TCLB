@@ -25,11 +25,14 @@ int cbHDF5::Init () {
 		attr = node.attribute("write_xdmf");
 		if (attr) write_xdmf = attr.as_bool();
 		if (write_xdmf) options = options | HDF5_WRITE_XDMF;
+		bool write_lbm = false;
+		attr = node.attribute("write_lbm");
+		if (attr) write_lbm = attr.as_bool();
+		if (write_lbm) options = options | HDF5_WRITE_LBM;
 		bool point_data = false;
 		attr = node.attribute("point_data");
 		if (attr) point_data = attr.as_bool();
 		if (point_data) options = options | HDF5_WRITE_POINT;
-		attr = node.attribute("chunk");
 		bool calc_double;
 #ifdef CALC_DOUBLE_PRECISION
 		calc_double = true;
